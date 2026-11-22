@@ -1,6 +1,6 @@
 # Bean Blvd RC Rentals
 
-Offline rental timer for the RC cars (₱45 / ₱30 per 15 minutes).
+Offline rental timer for the RC cars (₱45 / ₱30 per 15 minutes), with battery and charging tracking.
 
 Live app: https://geeannlopez.github.io/rental-timer/
 

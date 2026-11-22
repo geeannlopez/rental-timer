@@ -66,6 +66,18 @@
   .money b{font-size:20px;color:var(--ink)}
   .actions{display:flex;gap:8px;flex-wrap:wrap}
   .actions button{flex:1}
+  .batt-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+  .batt{flex:1;min-width:50px;height:8px;border-radius:99px;background:#eadfd1;overflow:hidden}
+  .batt-fill{height:100%;width:0;background:var(--run);border-radius:99px;transition:width .4s}
+  .batt-row.b-low .batt-fill{background:var(--warn)} .batt-row.b-low span{color:var(--warn);font-weight:700}
+  .batt-row.b-empty .batt-fill{background:var(--over)} .batt-row.b-empty span{color:var(--over);font-weight:700}
+  .batt-row.b-charging .batt-fill{background:#3b7bd1} .batt-row.b-charging span{color:#2c5d9c;font-weight:700}
+  .linkbtn{background:none;padding:0;color:var(--muted);font-size:12px;text-decoration:underline;font-weight:400;align-self:flex-start}
+  .warnbox{background:var(--warn-bg);color:#6b4a06;border-radius:10px;padding:.55em .8em;font-size:13px;margin-bottom:12px}
+  .check{display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:12px}
+  .card.done{border-top-color:#3b7bd1}
+  .urow.u5{grid-template-columns:1fr 84px 64px 64px 76px}
+  .ulabels{display:grid;grid-template-columns:1fr 84px 64px 64px 76px;gap:8px;font-size:11px;color:var(--muted);margin-bottom:4px}
   .idle-body{color:var(--muted);font-size:13px;flex:1;display:flex;align-items:center}
 
   .empty{grid-column:1/-1;text-align:center;padding:40px 20px;background:var(--card);border:1px dashed var(--line);border-radius:var(--radius)}
@@ -173,6 +185,28 @@ function phase(u, now) {
   return 'running';
 }
 
+/* ---------- battery ---------- */
+const battCap = u => Number(u.batteryMin) || 20;   // minutes of driving on a full battery
+const chargeCap = u => Number(u.chargeMin) || 60;  // minutes to charge from empty to full
+function battUsed(u, now = Date.now()) {
+  let used = Number(u.battUsedMin) || 0;
+  if (u.active) used += elapsedMs(u.active, now) / 60000 - (u.active.battOffsetMin || 0);
+  if (u.status === 'charging' && u.chargeStartAt) used -= (now - u.chargeStartAt) / 60000 / chargeCap(u) * battCap(u);
+  return Math.max(0, Math.min(battCap(u), used));
+}
+const battLeft = (u, now) => battCap(u) - battUsed(u, now);
+const battPct = (u, now) => Math.round(battLeft(u, now) / battCap(u) * 100);
+function chargeDoneAt(u) { // when a charging unit will be full
+  const need = (Number(u.battUsedMin) || 0) / battCap(u) * chargeCap(u) * 60000;
+  return (u.chargeStartAt || Date.now()) + need;
+}
+function battClass(u, now) {
+  if (u.status === 'charging' && !u.active) return 'charging';
+  const p = battPct(u, now);
+  return p <= 0 ? 'empty' : p <= 25 ? 'low' : '';
+}
+const battRow = id => `<div class="batt-row" data-t="battrow"><div class="batt"><div class="batt-fill" data-t="battfill"></div></div><span class="num" data-t="batt"></span></div>`;
+
 /* ---------- storage: shared db, or this device ---------- */
 let db = null;
 const LS = 'beanblvd-rc-v1';
@@ -254,35 +288,44 @@ function renderUnits() {
     if (!a) {
       const st = u.status || 'ready';
       const label = { ready: 'Ready', charging: 'Charging', broken: 'Out of order' }[st];
-      return `<div class="card ${st !== 'ready' ? 'off' : ''}" data-id="${u.id}">
+      return `<div class="card ${st === 'broken' ? 'off' : ''}" data-card="${u.id}" data-idle="1">
         <div class="top"><h3>${esc(u.name)}</h3><span class="rate">${peso(u.rate)}/15m</span></div>
-        <span class="pill ${st}" style="align-self:flex-start">${label}</span>
-        <div class="idle-body">${st === 'ready' ? 'Available to rent' : st === 'charging' ? 'Battery charging' : 'Not available'}</div>
+        <span class="pill ${st}" data-t="pill" style="align-self:flex-start">${label}</span>
+        <div class="idle-body" data-t="idle">${st === 'broken' ? 'Not available' : ''}</div>
+        ${battRow()}
         <div class="actions">
-          <button class="primary" data-act="start" data-id="${u.id}" ${st !== 'ready' ? 'disabled' : ''}>Start rental</button>
-          <button data-act="status" data-id="${u.id}" title="Change status">${st === 'ready' ? 'Charging' : st === 'charging' ? 'Ready' : 'Ready'}</button>
-        </div></div>`;
+          ${st === 'charging'
+            ? `<button class="primary" data-act="charged" data-id="${u.id}" data-t="chargedbtn">Stop charging</button>`
+            : `<button class="primary" data-act="start" data-id="${u.id}" ${st !== 'ready' ? 'disabled' : ''}>Start rental</button>
+               <button data-act="charge" data-id="${u.id}" ${st === 'broken' ? 'disabled' : ''}>Charge</button>`}
+        </div>
+        ${st === 'ready' ? `<button class="linkbtn" data-act="swap" data-id="${u.id}">Swapped in a full battery</button>` : ''}
+      </div>`;
     }
     return `<div class="card" data-card="${u.id}">
       <div class="top"><h3>${esc(u.name)}</h3><span class="rate">${peso(u.rate)}/15m</span></div>
       <div style="display:flex;gap:8px;align-items:center"><span class="pill" data-t="pill"></span><span class="cust">${a.customer ? esc(a.customer) : ''}</span></div>
       <div class="timer num" data-t="timer">0:00</div>
       <div class="sub num" data-t="sub"></div>
+      ${battRow()}
       <div class="money"><span data-t="mlabel">So far</span><b class="num" data-t="amt"></b></div>
       <div class="actions">
         ${a.prepaidMin ? `<button data-act="extend" data-id="${u.id}">+15 min</button>` : ''}
         <button data-act="pause" data-id="${u.id}">${a.pausedAt ? 'Resume' : 'Pause'}</button>
         <button class="primary" data-act="end" data-id="${u.id}">End</button>
-      </div></div>`;
+      </div>
+      <button class="linkbtn" data-act="swap" data-id="${u.id}">Swapped in a full battery</button></div>`;
   }).join('');
 }
 const alerted = new Set();
 function tick() {
   const now = Date.now(); let running = 0, active = 0;
   for (const u of state.units) {
-    if (!u.active) continue;
+    const card = document.querySelector(`[data-card="${u.id}"]`);
+    if (card) paintBattery(u, card, now);
+    if (!u.active) { if (card) paintIdle(u, card, now); continue; }
     active++; const b = bill(u, now); running += b.amount;
-    const card = document.querySelector(`[data-card="${u.id}"]`); if (!card) continue;
+    if (!card) continue;
     const ph = phase(u, now);
     card.className = 'card ' + ph;
     const pill = card.querySelector('[data-t=pill]');
@@ -309,6 +352,38 @@ function tick() {
   $('#sToday').textContent = peso(state.rentals.reduce((s, r) => s + (r.amount || 0), 0));
 }
 setInterval(tick, 1000);
+
+function paintBattery(u, card, now) {
+  const row = card.querySelector('[data-t=battrow]'); if (!row) return;
+  const left = battLeft(u, now), pct = battPct(u, now), cls = battClass(u, now);
+  row.className = 'batt-row' + (cls ? ' b-' + cls : '');
+  row.querySelector('[data-t=battfill]').style.width = pct + '%';
+  const txt = row.querySelector('[data-t=batt]');
+  if (cls === 'charging') txt.textContent = pct >= 100 ? 'Full' : `${pct}% · full ${clock(chargeDoneAt(u))}`;
+  else if (cls === 'empty') txt.textContent = 'Battery empty';
+  else txt.textContent = `🔋 ${Math.floor(left)}/${battCap(u)} min`;
+  if (u.active && cls === 'empty') {
+    const key = 'batt:' + u.id + ':' + u.active.startAt + ':' + (u.active.battOffsetMin || 0);
+    if (!alerted.has(key)) { alerted.add(key); beep(); toast(`${u.name}: battery is probably empty`); }
+  }
+}
+function paintIdle(u, card, now) {
+  const st = u.status || 'ready', idle = card.querySelector('[data-t=idle]'), pill = card.querySelector('[data-t=pill]');
+  if (st === 'charging') {
+    const full = battPct(u, now) >= 100;
+    card.className = 'card ' + (full ? 'done' : '');
+    pill.className = 'pill charging'; pill.textContent = full ? 'Fully charged' : 'Charging';
+    idle.textContent = full ? 'Ready to go back out' : `Charging since ${clock(u.chargeStartAt)} · ${mmss(chargeDoneAt(u) - now)} left`;
+    const btn = card.querySelector('[data-t=chargedbtn]'); if (btn) btn.textContent = full ? 'Mark ready' : 'Stop charging';
+    const key = 'chg:' + u.id + ':' + u.chargeStartAt;
+    if (full && !alerted.has(key)) { alerted.add(key); beep(); toast(`${u.name} is fully charged`); }
+  } else if (st === 'ready') {
+    const cls = battClass(u, now);
+    pill.className = 'pill ' + (cls === 'empty' ? 'over' : cls === 'low' ? 'warn' : 'ready');
+    pill.textContent = cls === 'empty' ? 'Needs charging' : cls === 'low' ? 'Charge soon' : 'Ready';
+    idle.textContent = cls === 'empty' ? 'Battery is used up' : 'Available to rent';
+  }
+}
 
 function renderLog() {
   const t = $('#log'), rs = state.rentals;
@@ -351,9 +426,17 @@ function startDialog(u) {
     <div class="field"><label>Time</label><div class="chips">
       ${opts.map((m, i) => `<button class="chip ${i === 0 ? 'on' : ''}" data-min="${m}">${m ? m + ' min' : 'Open'}<small>${m ? peso(m / BLOCK * u.rate) + ' paid' : 'pay at end'}</small></button>`).join('')}
     </div></div>
+    <div id="bwarn"></div>
     <div class="row-end"><button data-act="close">Cancel</button><button class="primary" id="go">Start timer</button></div>`);
   let pick = 0;
-  $('#sheet').querySelectorAll('.chip').forEach(c => c.onclick = () => { $('#sheet').querySelectorAll('.chip').forEach(x => x.classList.remove('on')); c.classList.add('on'); pick = +c.dataset.min; });
+  const left = Math.floor(battLeft(u));
+  const warn = () => {
+    const need = pick || BLOCK;
+    $('#bwarn').innerHTML = left < need
+      ? `<div class="warnbox">Battery has about ${left} min left${pick ? `, less than the ${pick} min paid` : ''}. Charge it or swap the battery first.</div>` : '';
+  };
+  warn();
+  $('#sheet').querySelectorAll('.chip').forEach(c => c.onclick = () => { $('#sheet').querySelectorAll('.chip').forEach(x => x.classList.remove('on')); c.classList.add('on'); pick = +c.dataset.min; warn(); });
   $('#go').onclick = async () => {
     const customer = $('#cust').value.trim();
     closeModal();
@@ -370,24 +453,29 @@ function endDialog(u) {
       ${b.paid ? `<div><span>Paid upfront</span><span class="num">${peso(b.paid)}</span></div>` : ''}
       <div class="tot"><span>${b.paid ? 'Balance to collect' : 'Collect'}</span><span class="num">${peso(b.due)}</span></div>
     </div>
+    <label class="check"><input type="checkbox" id="tocharge" ${battPct(u, now) <= 40 ? 'checked' : ''}> Put on charge now (battery ~${Math.floor(battLeft(u, now))} of ${battCap(u)} min left)</label>
     <p class="hint">Total for this rental: ${peso(b.amount)}. Includes a ${state.config.graceMin || 0}-minute grace before the next block is charged.</p>
     <div class="row-end"><button data-act="close">Keep running</button><button class="primary" id="go">${b.due > 0 ? 'Collected · end' : 'End rental'}</button></div>`);
   $('#go').onclick = async () => {
+    const charge = $('#tocharge').checked;
     closeModal();
     try {
       await store.addRental({ day: dayKey(now), unitId: u.id, unitName: u.name, rate: u.rate, customer: a.customer || '', startAt: a.startAt, endAt: now, minutes: b.min, blocks: b.blocks, amount: b.amount, prepaidMin: a.prepaidMin || 0 });
-      await store.saveUnit(u.id, { ...unitBody(u), active: null, status: 'ready' });
+      await store.saveUnit(u.id, { ...unitBody(u), active: null, battUsedMin: battUsed(u, now), status: charge ? 'charging' : 'ready', chargeStartAt: charge ? now : null });
       toast(`${u.name} ended · ${peso(b.amount)}`);
     } catch (e) {}
   };
 }
 function settingsDialog() {
-  const rows = state.units.map(u => `<div class="urow" data-uid="${u.id}">
+  const rows = state.units.map(u => `<div class="urow u5" data-uid="${u.id}">
       <input value="${esc(u.name)}" data-f="name" maxlength="30">
-      <select data-f="rate">${[45, 30].concat([45, 30].includes(u.rate) ? [] : [u.rate]).map(r => `<option value="${r}" ${r === u.rate ? 'selected' : ''}>${peso(r)}/15m</option>`).join('')}</select>
+      <select data-f="rate">${[45, 30].concat([45, 30].includes(u.rate) ? [] : [u.rate]).map(r => `<option value="${r}" ${r === u.rate ? 'selected' : ''}>${peso(r)}</option>`).join('')}</select>
+      <input type="number" min="1" max="240" value="${battCap(u)}" data-f="batteryMin" title="Minutes of driving on a full battery">
+      <input type="number" min="1" max="600" value="${chargeCap(u)}" data-f="chargeMin" title="Minutes to charge from empty to full">
       <button class="ghost" data-act="rm" data-id="${u.id}" ${u.active ? 'disabled title="End the rental first"' : ''}>Remove</button></div>`).join('');
   openModal(`<h3>Units &amp; settings</h3><p class="lead">Changes save right away.</p>
-    <div class="field"><label>Your units</label>${rows || '<p class="hint" style="margin:0">No units yet.</p>'}</div>
+    <div class="field"><label>Your units</label>${rows ? '<div class="ulabels"><span>Name</span><span>Rate/15m</span><span>Run min</span><span>Charge min</span><span></span></div>' : ''}${rows || '<p class="hint" style="margin:0">No units yet.</p>'}</div>
+    <p class="hint">Run = minutes a full battery lasts. Charge = minutes to charge from empty to full.</p>
     <div class="field"><label>Add a unit</label>
       <div class="urow"><input id="nName" placeholder="e.g. Red Buggy #1" maxlength="30">
         <select id="nRate"><option value="45">₱45/15m</option><option value="30">₱30/15m</option></select>
@@ -402,13 +490,15 @@ function settingsDialog() {
       const u = unit(row.dataset.uid); if (!u) return;
       const name = row.querySelector('[data-f=name]').value.trim() || u.name;
       const rate = Number(row.querySelector('[data-f=rate]').value);
-      store.saveUnit(u.id, { ...unitBody(u), name, rate }).then(() => toast('Saved'), () => {});
+      const batteryMin = Math.max(1, Number(row.querySelector('[data-f=batteryMin]').value) || battCap(u));
+      const chargeMin = Math.max(1, Number(row.querySelector('[data-f=chargeMin]').value) || chargeCap(u));
+      store.saveUnit(u.id, { ...unitBody(u), name, rate, batteryMin, chargeMin }).then(() => toast('Saved'), () => {});
     });
   });
   $('#add').onclick = async () => {
     const name = $('#nName').value.trim(); if (!name) { $('#nName').focus(); return; }
     const id = newId('u');
-    await store.saveUnit(id, { name, rate: Number($('#nRate').value), status: 'ready', order: Date.now(), active: null }).catch(() => {});
+    await store.saveUnit(id, { name, rate: Number($('#nRate').value), status: 'ready', order: Date.now(), active: null, batteryMin: 20, chargeMin: 60, battUsedMin: 0 }).catch(() => {});
     settingsDialog(); toast(`${name} added`);
   };
   $('#grace').onchange = e => { const g = Math.max(0, Math.min(10, Number(e.target.value) || 0)); store.saveConfig({ ...state.config, graceMin: g }).then(() => toast('Saved'), () => {}); };
@@ -442,9 +532,17 @@ document.addEventListener('click', e => {
   if (act === 'settings') return settingsDialog();
   if (act === 'start' && u) return startDialog(u);
   if (act === 'end' && u && u.active) return endDialog(u);
-  if (act === 'status' && u) {
-    const next = (u.status || 'ready') === 'ready' ? 'charging' : 'ready';
-    return store.saveUnit(u.id, { ...unitBody(u), status: next }).catch(() => {});
+  if (act === 'charge' && u && !u.active) {
+    return store.saveUnit(u.id, { ...unitBody(u), status: 'charging', chargeStartAt: Date.now() }).catch(() => {});
+  }
+  if (act === 'charged' && u && !u.active) {
+    const now = Date.now();
+    return store.saveUnit(u.id, { ...unitBody(u), battUsedMin: battUsed(u, now), status: 'ready', chargeStartAt: null }).catch(() => {});
+  }
+  if (act === 'swap' && u) {
+    const body = { ...unitBody(u), battUsedMin: 0 };
+    if (u.active) body.active = { ...u.active, battOffsetMin: elapsedMs(u.active) / 60000 };
+    return store.saveUnit(u.id, body).then(() => toast(`${u.name}: battery reset to full`), () => {});
   }
   if (act === 'extend' && u && u.active) {
     return store.saveUnit(u.id, { ...unitBody(u), active: { ...u.active, prepaidMin: (u.active.prepaidMin || 0) + BLOCK } }).then(() => toast(`+15 min · collect ${peso(u.rate)}`), () => {});
