@@ -72,6 +72,8 @@
   .batt-row.b-low .batt-fill{background:var(--warn)} .batt-row.b-low span{color:var(--warn);font-weight:700}
   .batt-row.b-empty .batt-fill{background:var(--over)} .batt-row.b-empty span{color:var(--over);font-weight:700}
   .batt-row.b-charging .batt-fill{background:#3b7bd1} .batt-row.b-charging span{color:#2c5d9c;font-weight:700}
+  .links{display:flex;gap:14px;flex-wrap:wrap}
+  .linkbtn.red{color:var(--over)}
   .linkbtn{background:none;padding:0;color:var(--muted);font-size:12px;text-decoration:underline;font-weight:400;align-self:flex-start}
   .warnbox{background:var(--warn-bg);color:#6b4a06;border-radius:10px;padding:.55em .8em;font-size:13px;margin-bottom:12px}
   .check{display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:12px}
@@ -194,6 +196,11 @@ function battUsed(u, now = Date.now()) {
   if (u.status === 'charging' && u.chargeStartAt) used -= (now - u.chargeStartAt) / 60000 / chargeCap(u) * battCap(u);
   return Math.max(0, Math.min(battCap(u), used));
 }
+function battUsedRaw(u, now = Date.now()) { // minutes driven since last full, without clamping
+  let used = Number(u.battUsedMin) || 0;
+  if (u.active) used += elapsedMs(u.active, now) / 60000 - (u.active.battOffsetMin || 0);
+  return Math.max(0, used);
+}
 const battLeft = (u, now) => battCap(u) - battUsed(u, now);
 const battPct = (u, now) => Math.round(battLeft(u, now) / battCap(u) * 100);
 function chargeDoneAt(u) { // when a charging unit will be full
@@ -304,7 +311,7 @@ function renderUnits() {
             : `<button class="primary" data-act="start" data-id="${u.id}" ${st !== 'ready' ? 'disabled' : ''}>Start rental</button>
                <button data-act="charge" data-id="${u.id}" ${st === 'broken' ? 'disabled' : ''}>Charge</button>`}
         </div>
-        ${st === 'ready' ? `<button class="linkbtn" data-act="swap" data-id="${u.id}">Swapped in a full battery</button>` : ''}
+        ${st === 'ready' ? `<div class="links"><button class="linkbtn red" data-act="dead" data-id="${u.id}">Battery died</button><button class="linkbtn" data-act="swap" data-id="${u.id}">Swapped in a full battery</button></div>` : ''}
       </div>`;
     }
     return `<div class="card" data-card="${u.id}">
@@ -319,7 +326,7 @@ function renderUnits() {
         <button data-act="pause" data-id="${u.id}">${a.pausedAt ? 'Resume' : 'Pause'}</button>
         <button class="primary" data-act="end" data-id="${u.id}">End</button>
       </div>
-      <button class="linkbtn" data-act="swap" data-id="${u.id}">Swapped in a full battery</button></div>`;
+      <div class="links"><button class="linkbtn red" data-act="dead" data-id="${u.id}">Battery died</button><button class="linkbtn" data-act="swap" data-id="${u.id}">Swapped in a full battery</button></div></div>`;
   }).join('');
 }
 const alerted = new Set();
@@ -508,6 +515,38 @@ function settingsDialog() {
   };
   $('#grace').onchange = e => { const g = Math.max(0, Math.min(10, Number(e.target.value) || 0)); store.saveConfig({ ...state.config, graceMin: g }).then(() => toast('Saved'), () => {}); };
 }
+function deadDialog(u) {
+  const now = Date.now(), lasted = Math.round(battUsedRaw(u, now)), cap = battCap(u);
+  const fix = lasted >= 3 && Math.abs(lasted - cap) >= 2;
+  openModal(`<h3>${esc(u.name)}: battery died</h3>
+    <p class="lead">It lasted about ${lasted} min since its last full charge.</p>
+    ${fix ? `<label class="check"><input type="checkbox" id="fixrun" ${lasted < cap ? 'checked' : ''}> Set this car's run time to ${lasted} min (now ${cap} min)</label>` : ''}
+    ${u.active ? `<p class="hint">Pausing stops the rental timer, so the customer isn't charged while the car is dead.</p>` : ''}
+    <div class="row-end" style="flex-wrap:wrap">
+      ${u.active
+        ? `<button data-dead="pause">Pause rental</button><button data-dead="swap">Swap battery, keep going</button><button class="primary" data-dead="end">End rental &amp; charge</button>`
+        : `<button data-dead="mark">Just mark empty</button><button class="primary" data-dead="charge">Start charging</button>`}
+    </div>`);
+  $('#sheet').querySelectorAll('[data-dead]').forEach(btn => btn.onclick = async () => {
+    const choice = btn.dataset.dead, fixBox = $('#fixrun');
+    const body = { ...unitBody(u) };
+    if (fixBox && fixBox.checked) body.batteryMin = Math.max(1, lasted);
+    const newCap = body.batteryMin || cap;
+    if (choice === 'swap') { body.battUsedMin = 0; }
+    else { body.battUsedMin = newCap; }
+    if (u.active) {
+      body.active = { ...u.active, battOffsetMin: elapsedMs(u.active, now) / 60000 };
+      if (choice === 'pause' && !u.active.pausedAt) body.active.pausedAt = now;
+    }
+    if (choice === 'charge') { body.status = 'charging'; body.chargeStartAt = now; }
+    closeModal();
+    try {
+      await store.saveUnit(u.id, body);
+      if (choice === 'end') { const fresh = unit(u.id); if (fresh && fresh.active) endDialog(fresh); }
+      else toast({ pause: 'Rental paused', swap: 'Battery reset to full', mark: 'Marked as empty', charge: 'Charging started' }[choice]);
+    } catch (e) {}
+  });
+}
 function confirmDialog(title, text, okLabel, fn) {
   openModal(`<h3>${title}</h3><p class="lead">${text}</p><div class="row-end"><button data-act="close">Cancel</button><button class="danger" id="go">${okLabel}</button></div>`);
   $('#go').onclick = () => { closeModal(); fn(); };
@@ -544,6 +583,7 @@ document.addEventListener('click', e => {
     const now = Date.now();
     return store.saveUnit(u.id, { ...unitBody(u), battUsedMin: battUsed(u, now), status: 'ready', chargeStartAt: null }).catch(() => {});
   }
+  if (act === 'dead' && u) return deadDialog(u);
   if (act === 'swap' && u) {
     const body = { ...unitBody(u), battUsedMin: 0 };
     if (u.active) body.active = { ...u.active, battOffsetMin: elapsedMs(u.active) / 60000 };
