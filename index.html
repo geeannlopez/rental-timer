@@ -308,7 +308,7 @@ function renderUnits() {
         <div class="actions">
           ${st === 'charging'
             ? `<button class="primary" data-act="charged" data-id="${u.id}" data-t="chargedbtn">Stop charging</button>`
-            : `<button class="primary" data-act="start" data-id="${u.id}" ${st !== 'ready' ? 'disabled' : ''}>Start rental</button>
+            : `<button class="primary" data-act="start" data-id="${u.id}" ${st !== 'ready' || battPct(u) <= 0 ? 'disabled' : ''} title="${battPct(u) <= 0 ? 'Charge or swap the battery first' : ''}">Start rental</button>
                <button data-act="charge" data-id="${u.id}" ${st === 'broken' ? 'disabled' : ''}>Charge</button>`}
         </div>
         ${st === 'ready' ? `<div class="links"><button class="linkbtn red" data-act="dead" data-id="${u.id}">Battery died</button><button class="linkbtn" data-act="swap" data-id="${u.id}">Swapped in a full battery</button></div>` : ''}
