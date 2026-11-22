@@ -81,8 +81,9 @@
   .warnbox{background:var(--warn-bg);color:#6b4a06;border-radius:10px;padding:.55em .8em;font-size:13px;margin-bottom:12px}
   .check{display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:12px}
   .card.done{border-top-color:#3b7bd1}
-  .urow.u5{grid-template-columns:1fr 84px 64px 64px 76px}
-  .ulabels{display:grid;grid-template-columns:1fr 84px 64px 64px 76px;gap:8px;font-size:11px;color:var(--muted);margin-bottom:4px}
+  .urow.u5{grid-template-columns:1fr 76px 58px 58px 58px 70px}
+  .urow.u3{grid-template-columns:1fr 90px 64px auto}
+  .ulabels{display:grid;grid-template-columns:1fr 76px 58px 58px 58px 70px;gap:8px;font-size:11px;color:var(--muted);margin-bottom:4px}
   .idle-body{color:var(--muted);font-size:13px;flex:1;display:flex;align-items:center}
 
   .empty{grid-column:1/-1;text-align:center;padding:40px 20px;background:var(--card);border:1px dashed var(--line);border-radius:var(--radius)}
@@ -147,7 +148,11 @@
 <div id="toast"></div>
 
 <script>
-const BLOCK = 15; // minutes per billing block
+const BLOCK = 15; // default minutes per billing block
+const blockOf = u => Math.max(1, Number(u.blockMin) || BLOCK);
+const blk = (u, a) => Math.max(1, Number(a && a.blockMin) || blockOf(u));   // block for a rental, fixed at start
+const rateOf = (u, a) => Number(a && a.rate) || Number(u.rate) || 0;          // price for a rental, fixed at start
+const per = u => `${peso(u.rate)}/${blockOf(u)}m`;
 const state = { units: [], rentals: [], config: { graceMin: 2 }, mode: 'loading' };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -172,12 +177,13 @@ function elapsedMs(a, now = Date.now()) {
 }
 function bill(u, now = Date.now()) {
   const a = u.active, ms = elapsedMs(a, now), min = ms / 60000, g = Number(state.config.graceMin) || 0;
-  const used = Math.max(1, Math.ceil((min - g) / BLOCK));
-  const preBlocks = a.prepaidMin ? a.prepaidMin / BLOCK : 0;
+  const B = blk(u, a), R = rateOf(u, a);
+  const used = Math.max(1, Math.ceil((min - g) / B));
+  const preBlocks = a.prepaidMin ? a.prepaidMin / B : 0;
   const blocks = Math.max(used, preBlocks);
-  const amount = blocks * u.rate, paid = preBlocks * u.rate;
-  const nextAtMin = blocks * BLOCK + g; // when the next block starts charging
-  return { ms, min, blocks, amount, paid, due: amount - paid, prepaidMs: (a.prepaidMin || 0) * 60000, nextInMs: (nextAtMin - min) * 60000 };
+  const amount = blocks * R, paid = preBlocks * R;
+  const nextAtMin = blocks * B + g; // when the next block starts charging
+  return { B, R, ms, min, blocks, amount, paid, due: amount - paid, prepaidMs: (a.prepaidMin || 0) * 60000, nextInMs: (nextAtMin - min) * 60000 };
 }
 function phase(u, now) {
   const a = u.active; if (!a) return u.status || 'ready';
@@ -304,7 +310,7 @@ function renderUnits() {
       const st = u.status || 'ready';
       const label = { ready: 'Ready', charging: 'Charging', broken: 'Out of order' }[st];
       return `<div class="card ${st === 'broken' ? 'off' : ''}" data-card="${u.id}" data-idle="1">
-        <div class="top"><h3>${esc(u.name)}</h3><span class="rate">${peso(u.rate)}/15m</span></div>
+        <div class="top"><h3>${esc(u.name)}</h3><span class="rate">${per(u)}</span></div>
         <span class="pill ${st}" data-t="pill" style="align-self:flex-start">${label}</span>
         <div class="idle-body" data-t="idle">${st === 'broken' ? 'Not available' : ''}</div>
         ${battRow()}
@@ -318,14 +324,14 @@ function renderUnits() {
       </div>`;
     }
     return `<div class="card" data-card="${u.id}">
-      <div class="top"><h3>${esc(u.name)}</h3><span class="rate">${peso(u.rate)}/15m</span></div>
+      <div class="top"><h3>${esc(u.name)}</h3><span class="rate">${per(u)}</span></div>
       <div style="display:flex;gap:8px;align-items:center"><span class="pill" data-t="pill"></span><span class="cust">${a.customer ? esc(a.customer) : ''}</span></div>
       <div class="timer num" data-t="timer">0:00</div>
       <div class="sub num" data-t="sub"></div>
       ${battRow()}
       <div class="money"><span data-t="mlabel">So far</span><b class="num" data-t="amt"></b></div>
       <div class="actions">
-        ${a.prepaidMin ? `<button data-act="extend" data-id="${u.id}">+15 min</button>` : ''}
+        ${a.prepaidMin ? `<button data-act="extend" data-id="${u.id}">+${blk(u, a)} min</button>` : ''}
         <button data-act="pause" data-id="${u.id}">${a.pausedAt ? 'Resume' : 'Pause'}</button>
         <button class="primary" data-act="end" data-id="${u.id}">End</button>
       </div>
@@ -357,8 +363,8 @@ function tick() {
       if (ph === 'over' && !alerted.has(key)) { alerted.add(key); beep(); }
     } else {
       timer.textContent = mmss(b.ms);
-      sub.textContent = u.active.pausedAt ? `paused · started ${clock(u.active.startAt)}` : `next ${peso(u.rate)} in ${mmss(Math.max(0, b.nextInMs))} · started ${clock(u.active.startAt)}`;
-      card.querySelector('[data-t=mlabel]').textContent = `So far · ${b.blocks} × 15 min`;
+      sub.textContent = u.active.pausedAt ? `paused · started ${clock(u.active.startAt)}` : `next ${peso(rateOf(u, u.active))} in ${mmss(Math.max(0, b.nextInMs))} · started ${clock(u.active.startAt)}`;
+      card.querySelector('[data-t=mlabel]').textContent = `So far · ${b.blocks} × ${b.B} min`;
       card.querySelector('[data-t=amt]').textContent = peso(b.amount);
     }
   }
@@ -435,27 +441,37 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal()
 const unit = id => state.units.find(u => u.id === id);
 
 function startDialog(u) {
-  const opts = [0, 15, 30, 45, 60, 90, 120];
-  openModal(`<h3>Start ${esc(u.name)}</h3><p class="lead">${peso(u.rate)} per 15 minutes</p>
+  const B = blockOf(u), opts = [0, B, B * 2, B * 3, B * 4, B * 6, B * 8];
+  openModal(`<h3>Start ${esc(u.name)}</h3><p class="lead">${peso(u.rate)} per ${B} minutes</p>
     <div class="field"><label for="cust">Customer or table (optional)</label><input id="cust" placeholder="e.g. Table 4, Marco" maxlength="40"></div>
     <div class="field"><label>Time</label><div class="chips">
-      ${opts.map((m, i) => `<button class="chip ${i === 0 ? 'on' : ''}" data-min="${m}">${m ? m + ' min' : 'Open'}<small>${m ? peso(m / BLOCK * u.rate) + ' paid' : 'pay at end'}</small></button>`).join('')}
+      ${opts.map((m, i) => `<button class="chip ${i === 0 ? 'on' : ''}" data-min="${m}">${m ? m + ' min' : 'Open'}<small>${m ? peso(m / B * u.rate) + ' paid' : 'pay at end'}</small></button>`).join('')}
     </div></div>
+    <div class="field"><label for="other">Other time (minutes)</label><input id="other" type="number" min="1" inputmode="numeric" placeholder="e.g. 50" style="max-width:140px"><span class="hint" id="otherHint" style="margin:0"></span></div>
     <div id="bwarn"></div>
     <div class="row-end"><button data-act="close">Cancel</button><button class="primary" id="go">Start timer</button></div>`);
   let pick = 0;
   const left = Math.floor(battLeft(u));
   const warn = () => {
-    const need = pick || BLOCK;
+    const need = pick || B;
     $('#bwarn').innerHTML = left < need
       ? `<div class="warnbox">Battery has about ${left} min left${pick ? `, less than the ${pick} min paid` : ''}. Charge it or swap the battery first.</div>` : '';
   };
+  const chips = () => $('#sheet').querySelectorAll('.chip');
   warn();
-  $('#sheet').querySelectorAll('.chip').forEach(c => c.onclick = () => { $('#sheet').querySelectorAll('.chip').forEach(x => x.classList.remove('on')); c.classList.add('on'); pick = +c.dataset.min; warn(); });
+  chips().forEach(c => c.onclick = () => { chips().forEach(x => x.classList.remove('on')); c.classList.add('on'); pick = +c.dataset.min; $('#other').value = ''; $('#otherHint').textContent = ''; warn(); });
+  $('#other').oninput = e => {
+    const v = Number(e.target.value);
+    if (v > 0) {
+      pick = Math.ceil(v / B) * B; chips().forEach(x => x.classList.remove('on'));
+      $('#otherHint').textContent = `${pick} min · ${peso(pick / B * u.rate)} paid${pick !== v ? ` (rounded up to ${B}-min blocks)` : ''}`;
+    } else { pick = 0; $('#otherHint').textContent = ''; chips()[0].classList.add('on'); }
+    warn();
+  };
   $('#go').onclick = async () => {
     const customer = $('#cust').value.trim();
     closeModal();
-    await store.saveUnit(u.id, { ...unitBody(u), active: { customer, startAt: Date.now(), prepaidMin: pick, pausedMs: 0, pausedAt: null } });
+    await store.saveUnit(u.id, { ...unitBody(u), active: { customer, startAt: Date.now(), prepaidMin: pick, pausedMs: 0, pausedAt: null, rate: u.rate, blockMin: B } });
   };
 }
 function endDialog(u) {
@@ -464,7 +480,7 @@ function endDialog(u) {
   openModal(`<h3>End ${esc(u.name)}</h3><p class="lead">${a.customer ? esc(a.customer) + ' · ' : ''}started ${clock(a.startAt)}</p>
     <div class="receipt">
       <div><span>Played</span><span class="num">${played} min</span></div>
-      <div><span>Charged</span><span class="num">${b.blocks} × 15 min × ${peso(u.rate)}</span></div>
+      <div><span>Charged</span><span class="num">${b.blocks} × ${b.B} min × ${peso(b.R)}</span></div>
       ${b.paid ? `<div><span>Paid upfront</span><span class="num">${peso(b.paid)}</span></div>` : ''}
       <div class="tot"><span>${b.paid ? 'Balance to collect' : 'Collect'}</span><span class="num">${peso(b.due)}</span></div>
     </div>
@@ -475,7 +491,7 @@ function endDialog(u) {
     const charge = $('#tocharge').checked;
     closeModal();
     try {
-      await store.addRental({ day: dayKey(now), unitId: u.id, unitName: u.name, rate: u.rate, customer: a.customer || '', startAt: a.startAt, endAt: now, minutes: b.min, blocks: b.blocks, amount: b.amount, prepaidMin: a.prepaidMin || 0 });
+      await store.addRental({ day: dayKey(now), unitId: u.id, unitName: u.name, rate: b.R, blockMin: b.B, customer: a.customer || '', startAt: a.startAt, endAt: now, minutes: b.min, blocks: b.blocks, amount: b.amount, prepaidMin: a.prepaidMin || 0 });
       await store.saveUnit(u.id, { ...unitBody(u), active: null, battUsedMin: battUsed(u, now), status: charge ? 'charging' : 'ready', chargeStartAt: charge ? now : null });
       toast(`${u.name} ended · ${peso(b.amount)}`);
     } catch (e) {}
@@ -484,20 +500,22 @@ function endDialog(u) {
 function settingsDialog() {
   const rows = state.units.map(u => `<div class="urow u5" data-uid="${u.id}">
       <input value="${esc(u.name)}" data-f="name" maxlength="30">
-      <div class="peso-in"><span>₱</span><input type="number" min="1" step="1" inputmode="numeric" value="${u.rate}" data-f="rate" title="Price per 15 minutes"></div>
+      <div class="peso-in"><span>₱</span><input type="number" min="1" step="1" inputmode="numeric" value="${u.rate}" data-f="rate" title="Price per block"></div>
+      <input type="number" min="1" max="240" inputmode="numeric" value="${blockOf(u)}" data-f="blockMin" title="Minutes per price block">
       <input type="number" min="1" max="240" value="${battCap(u)}" data-f="batteryMin" title="Minutes of driving on a full battery">
       <input type="number" min="1" max="600" value="${chargeCap(u)}" data-f="chargeMin" title="Minutes to charge from empty to full">
       <button class="ghost" data-act="rm" data-id="${u.id}" ${u.active ? 'disabled title="End the rental first"' : ''}>Remove</button></div>`).join('');
   openModal(`<h3>Units &amp; settings</h3><p class="lead">Changes save right away.</p>
-    <div class="field"><label>Your units</label>${rows ? '<div class="ulabels"><span>Name</span><span>Rate/15m</span><span>Run min</span><span>Charge min</span><span></span></div>' : ''}${rows || '<p class="hint" style="margin:0">No units yet.</p>'}</div>
-    <p class="hint">Run = minutes a full battery lasts. Charge = minutes to charge from empty to full.</p>
-    <div class="field"><label>Add a unit · name and price per 15 min</label>
-      <div class="urow"><input id="nName" placeholder="e.g. Red Buggy #1" maxlength="30">
-        <div class="peso-in"><span>₱</span><input id="nRate" type="number" min="1" step="1" inputmode="numeric" placeholder="Price" title="Price per 15 minutes"></div>
+    <div class="field"><label>Your units</label>${rows ? '<div class="ulabels"><span>Name</span><span>Price</span><span>Per min</span><span>Run min</span><span>Charge min</span><span></span></div>' : ''}${rows || '<p class="hint" style="margin:0">No units yet.</p>'}</div>
+    <p class="hint">Price is charged per "Per min" block, e.g. ₱45 per 15 min or ₱80 per 30 min. Run = minutes a full battery lasts. Charge = minutes to charge from empty to full.</p>
+    <div class="field"><label>Add a unit · name, price, and minutes per price</label>
+      <div class="urow u3"><input id="nName" placeholder="e.g. Red Buggy #1" maxlength="30">
+        <div class="peso-in"><span>₱</span><input id="nRate" type="number" min="1" step="1" inputmode="numeric" placeholder="Price" title="Price per block"></div>
+        <input id="nBlock" type="number" min="1" max="240" inputmode="numeric" value="15" title="Minutes per price">
         <button class="primary" id="add">Add</button></div></div>
     <hr>
     <div class="field"><label for="grace">Grace minutes</label><input id="grace" type="number" min="0" max="10" value="${state.config.graceMin ?? 2}" style="max-width:110px"></div>
-    <p class="hint">How long a customer can run over before the next 15-minute block is charged.</p>
+    <p class="hint">How long a customer can run over before the next block is charged.</p>
     <div class="row-end"><button class="primary" data-act="close">Done</button></div>`, true);
   const s = $('#sheet');
   s.querySelectorAll('.urow[data-uid]').forEach(row => {
@@ -505,16 +523,18 @@ function settingsDialog() {
       const u = unit(row.dataset.uid); if (!u) return;
       const name = row.querySelector('[data-f=name]').value.trim() || u.name;
       const rate = Math.max(1, Math.round(Number(row.querySelector('[data-f=rate]').value)) || u.rate);
+      const blockMin = Math.max(1, Math.round(Number(row.querySelector('[data-f=blockMin]').value)) || blockOf(u));
       const batteryMin = Math.max(1, Number(row.querySelector('[data-f=batteryMin]').value) || battCap(u));
       const chargeMin = Math.max(1, Number(row.querySelector('[data-f=chargeMin]').value) || chargeCap(u));
-      store.saveUnit(u.id, { ...unitBody(u), name, rate, batteryMin, chargeMin }).then(() => toast('Saved'), () => {});
+      store.saveUnit(u.id, { ...unitBody(u), name, rate, blockMin, batteryMin, chargeMin }).then(() => toast('Saved'), () => {});
     });
   });
   $('#add').onclick = async () => {
     const name = $('#nName').value.trim(); if (!name) { $('#nName').focus(); return; }
-    const rate = Math.round(Number($('#nRate').value)); if (!(rate > 0)) { $('#nRate').focus(); return toast('Enter the price per 15 minutes'); }
+    const rate = Math.round(Number($('#nRate').value)); if (!(rate > 0)) { $('#nRate').focus(); return toast('Enter the price'); }
+    const blockMin = Math.max(1, Math.round(Number($('#nBlock').value)) || BLOCK);
     const id = newId('u');
-    await store.saveUnit(id, { name, rate, status: 'ready', order: Date.now(), active: null, batteryMin: 20, chargeMin: 60, battUsedMin: 0 }).catch(() => {});
+    await store.saveUnit(id, { name, rate, blockMin, status: 'ready', order: Date.now(), active: null, batteryMin: 20, chargeMin: 60, battUsedMin: 0 }).catch(() => {});
     settingsDialog(); toast(`${name} added`);
   };
   $('#grace').onchange = e => { const g = Math.max(0, Math.min(10, Number(e.target.value) || 0)); store.saveConfig({ ...state.config, graceMin: g }).then(() => toast('Saved'), () => {}); };
@@ -594,7 +614,7 @@ document.addEventListener('click', e => {
     return store.saveUnit(u.id, body).then(() => toast(`${u.name}: battery reset to full`), () => {});
   }
   if (act === 'extend' && u && u.active) {
-    return store.saveUnit(u.id, { ...unitBody(u), active: { ...u.active, prepaidMin: (u.active.prepaidMin || 0) + BLOCK } }).then(() => toast(`+15 min · collect ${peso(u.rate)}`), () => {});
+    return store.saveUnit(u.id, { ...unitBody(u), active: { ...u.active, prepaidMin: (u.active.prepaidMin || 0) + blk(u, u.active) } }).then(() => toast(`+${blk(u, u.active)} min · collect ${peso(rateOf(u, u.active))}`), () => {});
   }
   if (act === 'pause' && u && u.active) {
     const a = { ...u.active }, now = Date.now();
