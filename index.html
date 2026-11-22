@@ -74,6 +74,9 @@
   .batt-row.b-charging .batt-fill{background:#3b7bd1} .batt-row.b-charging span{color:#2c5d9c;font-weight:700}
   .links{display:flex;gap:14px;flex-wrap:wrap}
   .linkbtn.red{color:var(--over)}
+  .peso-in{position:relative;display:flex}
+  .peso-in span{position:absolute;left:.65em;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+  .peso-in input{width:100%;padding-left:1.6em}
   .linkbtn{background:none;padding:0;color:var(--muted);font-size:12px;text-decoration:underline;font-weight:400;align-self:flex-start}
   .warnbox{background:var(--warn-bg);color:#6b4a06;border-radius:10px;padding:.55em .8em;font-size:13px;margin-bottom:12px}
   .check{display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:12px}
@@ -481,16 +484,16 @@ function endDialog(u) {
 function settingsDialog() {
   const rows = state.units.map(u => `<div class="urow u5" data-uid="${u.id}">
       <input value="${esc(u.name)}" data-f="name" maxlength="30">
-      <select data-f="rate">${[45, 30].concat([45, 30].includes(u.rate) ? [] : [u.rate]).map(r => `<option value="${r}" ${r === u.rate ? 'selected' : ''}>${peso(r)}</option>`).join('')}</select>
+      <div class="peso-in"><span>₱</span><input type="number" min="1" step="1" inputmode="numeric" value="${u.rate}" data-f="rate" title="Price per 15 minutes"></div>
       <input type="number" min="1" max="240" value="${battCap(u)}" data-f="batteryMin" title="Minutes of driving on a full battery">
       <input type="number" min="1" max="600" value="${chargeCap(u)}" data-f="chargeMin" title="Minutes to charge from empty to full">
       <button class="ghost" data-act="rm" data-id="${u.id}" ${u.active ? 'disabled title="End the rental first"' : ''}>Remove</button></div>`).join('');
   openModal(`<h3>Units &amp; settings</h3><p class="lead">Changes save right away.</p>
     <div class="field"><label>Your units</label>${rows ? '<div class="ulabels"><span>Name</span><span>Rate/15m</span><span>Run min</span><span>Charge min</span><span></span></div>' : ''}${rows || '<p class="hint" style="margin:0">No units yet.</p>'}</div>
     <p class="hint">Run = minutes a full battery lasts. Charge = minutes to charge from empty to full.</p>
-    <div class="field"><label>Add a unit</label>
+    <div class="field"><label>Add a unit · name and price per 15 min</label>
       <div class="urow"><input id="nName" placeholder="e.g. Red Buggy #1" maxlength="30">
-        <select id="nRate"><option value="45">₱45/15m</option><option value="30">₱30/15m</option></select>
+        <div class="peso-in"><span>₱</span><input id="nRate" type="number" min="1" step="1" inputmode="numeric" placeholder="Price" title="Price per 15 minutes"></div>
         <button class="primary" id="add">Add</button></div></div>
     <hr>
     <div class="field"><label for="grace">Grace minutes</label><input id="grace" type="number" min="0" max="10" value="${state.config.graceMin ?? 2}" style="max-width:110px"></div>
@@ -501,7 +504,7 @@ function settingsDialog() {
     row.querySelectorAll('[data-f]').forEach(inp => inp.onchange = () => {
       const u = unit(row.dataset.uid); if (!u) return;
       const name = row.querySelector('[data-f=name]').value.trim() || u.name;
-      const rate = Number(row.querySelector('[data-f=rate]').value);
+      const rate = Math.max(1, Math.round(Number(row.querySelector('[data-f=rate]').value)) || u.rate);
       const batteryMin = Math.max(1, Number(row.querySelector('[data-f=batteryMin]').value) || battCap(u));
       const chargeMin = Math.max(1, Number(row.querySelector('[data-f=chargeMin]').value) || chargeCap(u));
       store.saveUnit(u.id, { ...unitBody(u), name, rate, batteryMin, chargeMin }).then(() => toast('Saved'), () => {});
@@ -509,8 +512,9 @@ function settingsDialog() {
   });
   $('#add').onclick = async () => {
     const name = $('#nName').value.trim(); if (!name) { $('#nName').focus(); return; }
+    const rate = Math.round(Number($('#nRate').value)); if (!(rate > 0)) { $('#nRate').focus(); return toast('Enter the price per 15 minutes'); }
     const id = newId('u');
-    await store.saveUnit(id, { name, rate: Number($('#nRate').value), status: 'ready', order: Date.now(), active: null, batteryMin: 20, chargeMin: 60, battUsedMin: 0 }).catch(() => {});
+    await store.saveUnit(id, { name, rate, status: 'ready', order: Date.now(), active: null, batteryMin: 20, chargeMin: 60, battUsedMin: 0 }).catch(() => {});
     settingsDialog(); toast(`${name} added`);
   };
   $('#grace').onchange = e => { const g = Math.max(0, Math.min(10, Number(e.target.value) || 0)); store.saveConfig({ ...state.config, graceMin: g }).then(() => toast('Saved'), () => {}); };
