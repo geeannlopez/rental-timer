@@ -263,12 +263,17 @@ function subscribeRentals() {
     state.rentals = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.endAt - a.endAt); render();
   }, e => console.warn(e));
 }
+let swReloaded = false;
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('controllerchange', () => {
+  if (swReloaded || !navigator.serviceWorker.controller) return; swReloaded = true;
+  if ($('#modal').hidden) location.reload();
+});
 function init() {
   useLocal('');
   try { localStorage.setItem('beanblvd-test', '1'); localStorage.removeItem('beanblvd-test'); }
   catch (e) { note('This browser can\'t save data here. Install the app from its web address (see setup notes) so rentals are kept.'); }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
 }
 setInterval(() => { if (db && state.mode !== 'local' && dayKey() !== rentalDay) subscribeRentals(); if (state.mode === 'local') local.publish(); }, 60000);
 
