@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bean Blvd RC Rentals</title>
+<meta name="theme-color" content="#2a1c13">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --bg:#f5efe6; --card:#fffdf9; --ink:#2a1c13; --muted:#7d6a5c; --line:#e7dccd;
+    --brand:#6f4426; --brand-2:#8d5a35; --run:#2f7d4f; --run-bg:#e6f3ea;
+    --warn:#b7790a; --warn-bg:#fdf3dc; --over:#b8322a; --over-bg:#fbe5e2;
+    --idle:#a89584; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.4;min-height:100vh}
+  button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:.6em 1em;background:#efe5d8;color:var(--ink);font-weight:500}
+  button:hover{filter:brightness(.97)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:var(--brand);color:#fff}
+  button.danger{background:var(--over);color:#fff}
+  button.ghost{background:transparent;color:var(--muted);padding:.4em .6em}
+  input,select{font:inherit;padding:.55em .7em;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);min-width:0}
+  .num{font-variant-numeric:tabular-nums}
+
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:18px 22px;background:var(--ink);color:#f5efe6}
+  .brand{display:flex;align-items:center;gap:10px;margin-right:auto}
+  .brand b{font-size:19px;letter-spacing:.2px}
+  .brand span{color:#cbb7a3;font-size:13px}
+  .stats{display:flex;gap:22px;flex-wrap:wrap}
+  .stat small{display:block;color:#cbb7a3;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .stat b{font-size:20px}
+  header button{background:#3d2a1d;color:#f5efe6}
+
+  #note{display:none;margin:12px 22px 0;padding:.6em .9em;border-radius:10px;background:var(--warn-bg);color:#6b4a06;font-size:13px}
+  #note.show{display:block}
+
+  main{padding:18px 22px 40px;max-width:1280px;margin:0 auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px 16px;display:flex;flex-direction:column;gap:10px;position:relative;border-top:5px solid var(--idle)}
+  .card.running{border-top-color:var(--run)}
+  .card.warn{border-top-color:var(--warn);background:var(--warn-bg)}
+  .card.over{border-top-color:var(--over);background:var(--over-bg);animation:pulse 1.2s ease-in-out infinite}
+  .card.paused{border-top-color:var(--muted)}
+  .card.off{opacity:.7}
+  @keyframes pulse{50%{box-shadow:0 0 0 4px rgba(184,50,42,.22)}}
+  .top{display:flex;align-items:center;gap:8px}
+  .top h3{margin:0;font-size:17px;margin-right:auto}
+  .rate{font-size:12px;font-weight:700;padding:.2em .55em;border-radius:99px;background:#efe5d8;color:var(--brand)}
+  .pill{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:.25em .6em;border-radius:99px}
+  .pill.ready{background:#e9e2d8;color:var(--muted)}
+  .pill.running{background:var(--run-bg);color:var(--run)}
+  .pill.charging{background:#e5eefb;color:#2c5d9c}
+  .pill.broken{background:var(--over-bg);color:var(--over)}
+  .pill.paused{background:#ece6df;color:var(--muted)}
+  .pill.warn{background:#fbe7b5;color:#7a5306}
+  .pill.over{background:var(--over);color:#fff}
+  .timer{font-size:40px;font-weight:700;line-height:1;letter-spacing:-.5px}
+  .sub{color:var(--muted);font-size:13px;min-height:1.2em}
+  .cust{font-size:13px;color:var(--ink)}
+  .money{display:flex;justify-content:space-between;align-items:baseline;border-top:1px dashed var(--line);padding-top:8px;font-size:13px;color:var(--muted)}
+  .money b{font-size:20px;color:var(--ink)}
+  .actions{display:flex;gap:8px;flex-wrap:wrap}
+  .actions button{flex:1}
+  .idle-body{color:var(--muted);font-size:13px;flex:1;display:flex;align-items:center}
+
+  .empty{grid-column:1/-1;text-align:center;padding:40px 20px;background:var(--card);border:1px dashed var(--line);border-radius:var(--radius)}
+  .empty h3{margin:0 0 6px}
+  .empty p{color:var(--muted);margin:0 0 16px}
+
+  .log{margin-top:28px}
+  .log-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+  .log-head h2{margin:0;font-size:17px}
+  .log-head span{color:var(--muted);font-size:13px}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  th,td{text-align:left;padding:.6em .8em;border-bottom:1px solid var(--line);font-size:14px}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;background:#faf5ee}
+  tr:last-child td{border-bottom:0}
+  td.r,th.r{text-align:right}
+  .tbl-wrap{overflow-x:auto}
+  .nolog{color:var(--muted);text-align:center;padding:18px}
+
+  #modal{position:fixed;inset:0;background:rgba(42,28,19,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+  #modal[hidden]{display:none}
+  .sheet{background:var(--card);border-radius:18px;padding:20px;width:100%;max-width:440px;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .sheet.wide{max-width:620px}
+  .sheet h3{margin:0 0 4px;font-size:19px}
+  .sheet .lead{color:var(--muted);margin:0 0 16px;font-size:14px}
+  .field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+  .field label{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+  .chip{background:#f3ebe0;border:2px solid transparent;padding:.6em .4em;text-align:center;line-height:1.2}
+  .chip small{display:block;color:var(--muted);font-weight:400;font-size:12px}
+  .chip.on{border-color:var(--brand);background:#fff}
+  .row-end{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+  .receipt{background:#faf5ee;border-radius:12px;padding:12px 14px;margin-bottom:14px}
+  .receipt div{display:flex;justify-content:space-between;padding:3px 0;font-size:14px}
+  .receipt .tot{border-top:1px solid var(--line);margin-top:6px;padding-top:8px;font-size:18px;font-weight:700}
+  .urow{display:grid;grid-template-columns:1fr 110px auto;gap:8px;align-items:center;margin-bottom:8px}
+  .hint{font-size:12px;color:var(--muted);margin:-6px 0 14px}
+  hr{border:0;border-top:1px solid var(--line);margin:16px 0}
+  #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:.6em 1em;border-radius:10px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+  #toast.show{opacity:1}
+  @media (max-width:520px){ .timer{font-size:34px} header{padding:14px 16px} main{padding:14px 16px 32px} }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>Bean Blvd</b><span>RC Rentals</span></div>
+  <div class="stats">
+    <div class="stat"><small>Out now</small><b class="num" id="sActive">0</b></div>
+    <div class="stat"><small>Running total</small><b class="num" id="sRunning">₱0</b></div>
+    <div class="stat"><small>Collected today</small><b class="num" id="sToday">₱0</b></div>
+  </div>
+  <button data-act="settings">Units &amp; settings</button>
+</header>
+<div id="note"></div>
+<main>
+  <section id="units" class="grid"><div class="empty"><p>Loading units…</p></div></section>
+  <section class="log">
+    <div class="log-head"><h2>Today's rentals</h2><span id="logMeta"></span><span style="margin-left:auto;display:flex;gap:8px"><button data-act="csv" data-scope="today">Download today (CSV)</button><button data-act="csv" data-scope="all">All history</button></span></div>
+    <div class="tbl-wrap"><table id="log"></table></div>
+  </section>
+</main>
+<div id="modal" hidden><div class="sheet" id="sheet"></div></div>
+<div id="toast"></div>
+
+<script>
+const BLOCK = 15; // minutes per billing block
+const state = { units: [], rentals: [], config: { graceMin: 2 }, mode: 'loading' };
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const peso = n => '₱' + Math.round(n).toLocaleString('en-PH');
+const dayKey = (t = Date.now()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(t);
+const clock = t => new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }).format(t);
+const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function mmss(ms) {
+  const neg = ms < 0; ms = Math.abs(ms);
+  const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const body = h ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
+  return (neg ? '+' : '') + body;
+}
+function note(msg) { const n = $('#note'); n.textContent = msg || ''; n.classList.toggle('show', !!msg); }
+let toastT; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200); }
+
+/* ---------- billing ---------- */
+function elapsedMs(a, now = Date.now()) {
+  let e = now - a.startAt - (a.pausedMs || 0);
+  if (a.pausedAt) e -= (now - a.pausedAt);
+  return Math.max(0, e);
+}
+function bill(u, now = Date.now()) {
+  const a = u.active, ms = elapsedMs(a, now), min = ms / 60000, g = Number(state.config.graceMin) || 0;
+  const used = Math.max(1, Math.ceil((min - g) / BLOCK));
+  const preBlocks = a.prepaidMin ? a.prepaidMin / BLOCK : 0;
+  const blocks = Math.max(used, preBlocks);
+  const amount = blocks * u.rate, paid = preBlocks * u.rate;
+  const nextAtMin = blocks * BLOCK + g; // when the next block starts charging
+  return { ms, min, blocks, amount, paid, due: amount - paid, prepaidMs: (a.prepaidMin || 0) * 60000, nextInMs: (nextAtMin - min) * 60000 };
+}
+function phase(u, now) {
+  const a = u.active; if (!a) return u.status || 'ready';
+  if (a.pausedAt) return 'paused';
+  if (a.prepaidMin) {
+    const left = a.prepaidMin * 60000 - elapsedMs(a, now);
+    if (left <= 0) return 'over';
+    if (left <= 60000) return 'warn';
+  }
+  return 'running';
+}
+
+/* ---------- storage: shared db, or this device ---------- */
+let db = null;
+const LS = 'beanblvd-rc-v1';
+const local = {
+  data: null,
+  load() { try { this.data = JSON.parse(localStorage.getItem(LS)) || {}; } catch (e) { this.data = {}; } this.data.units ||= {}; this.data.rentals ||= {}; this.data.config ||= { graceMin: 2 }; },
+  save() { try { localStorage.setItem(LS, JSON.stringify(this.data)); } catch (e) {} },
+  publish() {
+    state.units = Object.entries(this.data.units).map(([id, v]) => ({ id, ...v })).sort((a, b) => (a.order || 0) - (b.order || 0));
+    const today = dayKey();
+    state.rentals = Object.entries(this.data.rentals).map(([id, v]) => ({ id, ...v })).filter(r => r.day === today).sort((a, b) => b.endAt - a.endAt);
+    state.config = this.data.config; render();
+  }
+};
+const writing = {}; // one write at a time per doc
+function queued(key, fn) { const p = (writing[key] || Promise.resolve()).then(fn, fn); writing[key] = p.catch(() => {}); return p; }
+function failed(e) {
+  console.warn(e);
+  if (e && e.code === 'invalid_argument') note('You can view this tracker but not change it. Ask the owner to share it with you as a Contributor or Editor.');
+  else if (e && e.code === 'quota_exceeded') toast('Storage is full. Delete old rentals to keep logging.');
+  else toast('Couldn’t save. Check the connection and try again.');
+  throw e;
+}
+const store = {
+  async saveUnit(id, body) {
+    if (state.mode === 'local') { local.data.units[id] = body; local.save(); local.publish(); return; }
+    return queued('u' + id, () => db.collection('units').doc(id).set(body)).catch(failed);
+  },
+  async deleteUnit(id) {
+    if (state.mode === 'local') { delete local.data.units[id]; local.save(); local.publish(); return; }
+    return queued('u' + id, () => db.collection('units').doc(id).delete()).catch(failed);
+  },
+  async addRental(body) {
+    const id = newId('r');
+    if (state.mode === 'local') { local.data.rentals[id] = body; local.save(); local.publish(); return; }
+    return db.collection('rentals').doc(id).set(body).catch(failed);
+  },
+  async deleteRental(id) {
+    if (state.mode === 'local') { delete local.data.rentals[id]; local.save(); local.publish(); return; }
+    return db.collection('rentals').doc(id).delete().catch(failed);
+  },
+  async saveConfig(cfg) {
+    if (state.mode === 'local') { local.data.config = cfg; local.save(); local.publish(); return; }
+    return queued('cfg', () => db.doc('config/main').set(cfg)).catch(failed);
+  }
+};
+function useLocal(msg) { state.mode = 'local'; local.load(); local.publish(); note(msg); }
+
+let unsubRentals = null, rentalDay = null;
+function subscribeRentals() {
+  if (unsubRentals) unsubRentals();
+  rentalDay = dayKey();
+  unsubRentals = db.collection('rentals').where('day', '==', rentalDay).onSnapshot(snap => {
+    state.rentals = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.endAt - a.endAt); render();
+  }, e => console.warn(e));
+}
+function init() {
+  useLocal('');
+  try { localStorage.setItem('beanblvd-test', '1'); localStorage.removeItem('beanblvd-test'); }
+  catch (e) { note('This browser can\'t save data here. Install the app from its web address (see setup notes) so rentals are kept.'); }
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+setInterval(() => { if (db && state.mode !== 'local' && dayKey() !== rentalDay) subscribeRentals(); if (state.mode === 'local') local.publish(); }, 60000);
+
+/* ---------- render ---------- */
+function unitBody(u) { const { id, ...rest } = u; return rest; }
+function render() { renderUnits(); renderLog(); tick(); }
+function renderUnits() {
+  const el = $('#units');
+  if (state.mode === 'loading' || (state.mode === 'connecting' && !state.units.length)) { el.innerHTML = '<div class="empty"><p>Loading units…</p></div>'; return; }
+  if (!state.units.length) {
+    el.innerHTML = `<div class="empty"><h3>Add your RC units</h3><p>Give each car a name or number so staff can tell them apart.</p>
+      <button class="primary" data-act="settings">Add units</button></div>`;
+    return;
+  }
+  el.innerHTML = state.units.map(u => {
+    const a = u.active;
+    if (!a) {
+      const st = u.status || 'ready';
+      const label = { ready: 'Ready', charging: 'Charging', broken: 'Out of order' }[st];
+      return `<div class="card ${st !== 'ready' ? 'off' : ''}" data-id="${u.id}">
+        <div class="top"><h3>${esc(u.name)}</h3><span class="rate">${peso(u.rate)}/15m</span></div>
+        <span class="pill ${st}" style="align-self:flex-start">${label}</span>
+        <div class="idle-body">${st === 'ready' ? 'Available to rent' : st === 'charging' ? 'Battery charging' : 'Not available'}</div>
+        <div class="actions">
+          <button class="primary" data-act="start" data-id="${u.id}" ${st !== 'ready' ? 'disabled' : ''}>Start rental</button>
+          <button data-act="status" data-id="${u.id}" title="Change status">${st === 'ready' ? 'Charging' : st === 'charging' ? 'Ready' : 'Ready'}</button>
+        </div></div>`;
+    }
+    return `<div class="card" data-card="${u.id}">
+      <div class="top"><h3>${esc(u.name)}</h3><span class="rate">${peso(u.rate)}/15m</span></div>
+      <div style="display:flex;gap:8px;align-items:center"><span class="pill" data-t="pill"></span><span class="cust">${a.customer ? esc(a.customer) : ''}</span></div>
+      <div class="timer num" data-t="timer">0:00</div>
+      <div class="sub num" data-t="sub"></div>
+      <div class="money"><span data-t="mlabel">So far</span><b class="num" data-t="amt"></b></div>
+      <div class="actions">
+        ${a.prepaidMin ? `<button data-act="extend" data-id="${u.id}">+15 min</button>` : ''}
+        <button data-act="pause" data-id="${u.id}">${a.pausedAt ? 'Resume' : 'Pause'}</button>
+        <button class="primary" data-act="end" data-id="${u.id}">End</button>
+      </div></div>`;
+  }).join('');
+}
+const alerted = new Set();
+function tick() {
+  const now = Date.now(); let running = 0, active = 0;
+  for (const u of state.units) {
+    if (!u.active) continue;
+    active++; const b = bill(u, now); running += b.amount;
+    const card = document.querySelector(`[data-card="${u.id}"]`); if (!card) continue;
+    const ph = phase(u, now);
+    card.className = 'card ' + ph;
+    const pill = card.querySelector('[data-t=pill]');
+    pill.className = 'pill ' + ph;
+    pill.textContent = { running: 'Running', paused: 'Paused', warn: 'Ending soon', over: 'Time’s up' }[ph];
+    const timer = card.querySelector('[data-t=timer]'), sub = card.querySelector('[data-t=sub]');
+    if (u.active.prepaidMin) {
+      const left = b.prepaidMs - b.ms;
+      timer.textContent = mmss(left);
+      sub.textContent = left > 0 ? `left of ${u.active.prepaidMin} min · started ${clock(u.active.startAt)}` : `over the ${u.active.prepaidMin} min paid · started ${clock(u.active.startAt)}`;
+      card.querySelector('[data-t=mlabel]').textContent = b.due > 0 ? 'Balance to collect' : 'Paid upfront';
+      card.querySelector('[data-t=amt]').textContent = b.due > 0 ? peso(b.due) : peso(b.paid);
+      const key = u.id + ':' + u.active.startAt + ':' + u.active.prepaidMin;
+      if (ph === 'over' && !alerted.has(key)) { alerted.add(key); beep(); }
+    } else {
+      timer.textContent = mmss(b.ms);
+      sub.textContent = u.active.pausedAt ? `paused · started ${clock(u.active.startAt)}` : `next ${peso(u.rate)} in ${mmss(Math.max(0, b.nextInMs))} · started ${clock(u.active.startAt)}`;
+      card.querySelector('[data-t=mlabel]').textContent = `So far · ${b.blocks} × 15 min`;
+      card.querySelector('[data-t=amt]').textContent = peso(b.amount);
+    }
+  }
+  $('#sActive').textContent = active;
+  $('#sRunning').textContent = peso(running);
+  $('#sToday').textContent = peso(state.rentals.reduce((s, r) => s + (r.amount || 0), 0));
+}
+setInterval(tick, 1000);
+
+function renderLog() {
+  const t = $('#log'), rs = state.rentals;
+  const total = rs.reduce((s, r) => s + (r.amount || 0), 0);
+  $('#logMeta').textContent = rs.length ? `${rs.length} rental${rs.length > 1 ? 's' : ''} · ${peso(total)}` : '';
+  if (!rs.length) { t.innerHTML = '<tr><td class="nolog">No finished rentals yet today.</td></tr>'; return; }
+  t.innerHTML = `<thead><tr><th>Unit</th><th>Customer</th><th>Time</th><th class="r">Played</th><th class="r">Amount</th><th></th></tr></thead><tbody>` +
+    rs.map(r => `<tr><td>${esc(r.unitName)}</td><td>${esc(r.customer || '—')}</td><td class="num">${clock(r.startAt)}–${clock(r.endAt)}</td>
+      <td class="r num">${Math.round(r.minutes)} min</td><td class="r num"><b>${peso(r.amount)}</b></td>
+      <td class="r"><button class="ghost" data-act="void" data-id="${r.id}" title="Remove this entry">✕</button></td></tr>`).join('') + '</tbody>';
+}
+
+/* ---------- sound ---------- */
+let actx = null;
+document.addEventListener('pointerdown', () => { if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } }, { once: true });
+function beep() {
+  if (!actx) return;
+  try {
+    [0, .35, .7].forEach(d => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(actx.destination);
+      g.gain.setValueAtTime(.0001, actx.currentTime + d); g.gain.exponentialRampToValueAtTime(.3, actx.currentTime + d + .02);
+      g.gain.exponentialRampToValueAtTime(.0001, actx.currentTime + d + .25);
+      o.start(actx.currentTime + d); o.stop(actx.currentTime + d + .3);
+    });
+  } catch (e) {}
+}
+
+/* ---------- modal ---------- */
+function openModal(html, wide) { const s = $('#sheet'); s.className = 'sheet' + (wide ? ' wide' : ''); s.innerHTML = html; $('#modal').hidden = false; const f = s.querySelector('input'); if (f) f.focus(); }
+function closeModal() { $('#modal').hidden = true; $('#sheet').innerHTML = ''; }
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+const unit = id => state.units.find(u => u.id === id);
+
+function startDialog(u) {
+  const opts = [0, 15, 30, 45, 60, 90, 120];
+  openModal(`<h3>Start ${esc(u.name)}</h3><p class="lead">${peso(u.rate)} per 15 minutes</p>
+    <div class="field"><label for="cust">Customer or table (optional)</label><input id="cust" placeholder="e.g. Table 4, Marco" maxlength="40"></div>
+    <div class="field"><label>Time</label><div class="chips">
+      ${opts.map((m, i) => `<button class="chip ${i === 0 ? 'on' : ''}" data-min="${m}">${m ? m + ' min' : 'Open'}<small>${m ? peso(m / BLOCK * u.rate) + ' paid' : 'pay at end'}</small></button>`).join('')}
+    </div></div>
+    <div class="row-end"><button data-act="close">Cancel</button><button class="primary" id="go">Start timer</button></div>`);
+  let pick = 0;
+  $('#sheet').querySelectorAll('.chip').forEach(c => c.onclick = () => { $('#sheet').querySelectorAll('.chip').forEach(x => x.classList.remove('on')); c.classList.add('on'); pick = +c.dataset.min; });
+  $('#go').onclick = async () => {
+    const customer = $('#cust').value.trim();
+    closeModal();
+    await store.saveUnit(u.id, { ...unitBody(u), active: { customer, startAt: Date.now(), prepaidMin: pick, pausedMs: 0, pausedAt: null } });
+  };
+}
+function endDialog(u) {
+  const now = Date.now(), b = bill(u, now), a = u.active;
+  const played = Math.round(b.min);
+  openModal(`<h3>End ${esc(u.name)}</h3><p class="lead">${a.customer ? esc(a.customer) + ' · ' : ''}started ${clock(a.startAt)}</p>
+    <div class="receipt">
+      <div><span>Played</span><span class="num">${played} min</span></div>
+      <div><span>Charged</span><span class="num">${b.blocks} × 15 min × ${peso(u.rate)}</span></div>
+      ${b.paid ? `<div><span>Paid upfront</span><span class="num">${peso(b.paid)}</span></div>` : ''}
+      <div class="tot"><span>${b.paid ? 'Balance to collect' : 'Collect'}</span><span class="num">${peso(b.due)}</span></div>
+    </div>
+    <p class="hint">Total for this rental: ${peso(b.amount)}. Includes a ${state.config.graceMin || 0}-minute grace before the next block is charged.</p>
+    <div class="row-end"><button data-act="close">Keep running</button><button class="primary" id="go">${b.due > 0 ? 'Collected · end' : 'End rental'}</button></div>`);
+  $('#go').onclick = async () => {
+    closeModal();
+    try {
+      await store.addRental({ day: dayKey(now), unitId: u.id, unitName: u.name, rate: u.rate, customer: a.customer || '', startAt: a.startAt, endAt: now, minutes: b.min, blocks: b.blocks, amount: b.amount, prepaidMin: a.prepaidMin || 0 });
+      await store.saveUnit(u.id, { ...unitBody(u), active: null, status: 'ready' });
+      toast(`${u.name} ended · ${peso(b.amount)}`);
+    } catch (e) {}
+  };
+}
+function settingsDialog() {
+  const rows = state.units.map(u => `<div class="urow" data-uid="${u.id}">
+      <input value="${esc(u.name)}" data-f="name" maxlength="30">
+      <select data-f="rate">${[45, 30].concat([45, 30].includes(u.rate) ? [] : [u.rate]).map(r => `<option value="${r}" ${r === u.rate ? 'selected' : ''}>${peso(r)}/15m</option>`).join('')}</select>
+      <button class="ghost" data-act="rm" data-id="${u.id}" ${u.active ? 'disabled title="End the rental first"' : ''}>Remove</button></div>`).join('');
+  openModal(`<h3>Units &amp; settings</h3><p class="lead">Changes save right away.</p>
+    <div class="field"><label>Your units</label>${rows || '<p class="hint" style="margin:0">No units yet.</p>'}</div>
+    <div class="field"><label>Add a unit</label>
+      <div class="urow"><input id="nName" placeholder="e.g. Red Buggy #1" maxlength="30">
+        <select id="nRate"><option value="45">₱45/15m</option><option value="30">₱30/15m</option></select>
+        <button class="primary" id="add">Add</button></div></div>
+    <hr>
+    <div class="field"><label for="grace">Grace minutes</label><input id="grace" type="number" min="0" max="10" value="${state.config.graceMin ?? 2}" style="max-width:110px"></div>
+    <p class="hint">How long a customer can run over before the next 15-minute block is charged.</p>
+    <div class="row-end"><button class="primary" data-act="close">Done</button></div>`, true);
+  const s = $('#sheet');
+  s.querySelectorAll('.urow[data-uid]').forEach(row => {
+    row.querySelectorAll('[data-f]').forEach(inp => inp.onchange = () => {
+      const u = unit(row.dataset.uid); if (!u) return;
+      const name = row.querySelector('[data-f=name]').value.trim() || u.name;
+      const rate = Number(row.querySelector('[data-f=rate]').value);
+      store.saveUnit(u.id, { ...unitBody(u), name, rate }).then(() => toast('Saved'), () => {});
+    });
+  });
+  $('#add').onclick = async () => {
+    const name = $('#nName').value.trim(); if (!name) { $('#nName').focus(); return; }
+    const id = newId('u');
+    await store.saveUnit(id, { name, rate: Number($('#nRate').value), status: 'ready', order: Date.now(), active: null }).catch(() => {});
+    settingsDialog(); toast(`${name} added`);
+  };
+  $('#grace').onchange = e => { const g = Math.max(0, Math.min(10, Number(e.target.value) || 0)); store.saveConfig({ ...state.config, graceMin: g }).then(() => toast('Saved'), () => {}); };
+}
+function confirmDialog(title, text, okLabel, fn) {
+  openModal(`<h3>${title}</h3><p class="lead">${text}</p><div class="row-end"><button data-act="close">Cancel</button><button class="danger" id="go">${okLabel}</button></div>`);
+  $('#go').onclick = () => { closeModal(); fn(); };
+}
+
+function exportCsv(scope) {
+  const all = Object.values(local.data.rentals || {}).sort((x, y) => x.startAt - y.startAt);
+  const rows = scope === 'all' ? all : all.filter(r => r.day === dayKey());
+  if (!rows.length) return toast('No rentals to export yet.');
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const t = ts => new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: false }).format(ts);
+  const lines = ['Date,Unit,Customer,Start,End,Minutes,Blocks,Rate,Amount'].concat(rows.map(r =>
+    [r.day, q(r.unitName), q(r.customer), t(r.startAt), t(r.endAt), Math.round(r.minutes), r.blocks, r.rate, r.amount].join(',')));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = scope === 'all' ? 'rc-rentals-all.csv' : 'rc-rentals-' + dayKey() + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+/* ---------- actions ---------- */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const act = b.dataset.act, u = unit(b.dataset.id);
+  if (act === 'close') return closeModal();
+  if (act === 'settings') return settingsDialog();
+  if (act === 'start' && u) return startDialog(u);
+  if (act === 'end' && u && u.active) return endDialog(u);
+  if (act === 'status' && u) {
+    const next = (u.status || 'ready') === 'ready' ? 'charging' : 'ready';
+    return store.saveUnit(u.id, { ...unitBody(u), status: next }).catch(() => {});
+  }
+  if (act === 'extend' && u && u.active) {
+    return store.saveUnit(u.id, { ...unitBody(u), active: { ...u.active, prepaidMin: (u.active.prepaidMin || 0) + BLOCK } }).then(() => toast(`+15 min · collect ${peso(u.rate)}`), () => {});
+  }
+  if (act === 'pause' && u && u.active) {
+    const a = { ...u.active }, now = Date.now();
+    if (a.pausedAt) { a.pausedMs = (a.pausedMs || 0) + (now - a.pausedAt); a.pausedAt = null; } else a.pausedAt = now;
+    return store.saveUnit(u.id, { ...unitBody(u), active: a }).catch(() => {});
+  }
+  if (act === 'rm' && u) {
+    return confirmDialog(`Remove ${esc(u.name)}?`, 'Past rentals stay in the log.', 'Remove', () => store.deleteUnit(u.id).then(() => toast('Removed'), () => {}));
+  }
+  if (act === 'csv') return exportCsv(b.dataset.scope);
+  if (act === 'void') {
+    const r = state.rentals.find(x => x.id === b.dataset.id); if (!r) return;
+    return confirmDialog('Remove this entry?', `${esc(r.unitName)}, ${peso(r.amount)} at ${clock(r.endAt)}. It will no longer count in today's total.`, 'Remove entry', () => store.deleteRental(r.id).catch(() => {}));
+  }
+});
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "Bean Blvd RC Rentals",
+  "short_name": "RC Rentals",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5efe6",
+  "theme_color": "#2a1c13",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
