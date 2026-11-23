@@ -77,6 +77,9 @@
   .peso-in{position:relative;display:flex}
   .peso-in span{position:absolute;left:.65em;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
   .peso-in input{width:100%;padding-left:1.6em}
+  .clist .check{margin-bottom:6px;text-transform:none;letter-spacing:0;font-size:15px;font-weight:400;color:var(--ink)}
+  .clist .check input{width:20px;height:20px}
+  td.issue{color:var(--over);font-size:13px} td.ok{color:var(--run);font-size:13px}
   .linkbtn{background:none;padding:0;color:var(--muted);font-size:12px;text-decoration:underline;font-weight:400;align-self:flex-start}
   .warnbox{background:var(--warn-bg);color:#6b4a06;border-radius:10px;padding:.55em .8em;font-size:13px;margin-bottom:12px}
   .check{display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:12px}
@@ -152,6 +155,8 @@ const BLOCK = 15; // default minutes per billing block
 const blockOf = u => Math.max(1, Number(u.blockMin) || BLOCK);
 const blk = (u, a) => Math.max(1, Number(a && a.blockMin) || blockOf(u));   // block for a rental, fixed at start
 const rateOf = (u, a) => Number(a && a.rate) || Number(u.rate) || 0;          // price for a rental, fixed at start
+const DEFAULT_CHECKS = ['Car has no damage', 'Remote returned', 'Deposit / ID given back'];
+const checks = () => Array.isArray(state.config.checklist) ? state.config.checklist : DEFAULT_CHECKS;
 const per = u => `${peso(u.rate)}/${blockOf(u)}m`;
 const state = { units: [], rentals: [], config: { graceMin: 2 }, mode: 'loading' };
 const $ = s => document.querySelector(s);
@@ -308,14 +313,16 @@ function renderUnits() {
     const a = u.active;
     if (!a) {
       const st = u.status || 'ready';
-      const label = { ready: 'Ready', charging: 'Charging', broken: 'Out of order' }[st];
+      const label = { ready: 'Ready', charging: 'Charging', broken: 'Out of order' }[st] || 'Ready';
       return `<div class="card ${st === 'broken' ? 'off' : ''}" data-card="${u.id}" data-idle="1">
         <div class="top"><h3>${esc(u.name)}</h3><span class="rate">${per(u)}</span></div>
         <span class="pill ${st}" data-t="pill" style="align-self:flex-start">${label}</span>
-        <div class="idle-body" data-t="idle">${st === 'broken' ? 'Not available' : ''}</div>
+        <div class="idle-body" data-t="idle">${st === 'broken' ? (u.issue ? 'Needs repair: ' + esc(u.issue) : 'Needs repair') : ''}</div>
         ${battRow()}
         <div class="actions">
-          ${st === 'charging'
+          ${st === 'broken'
+            ? `<button class="primary" data-act="fixed" data-id="${u.id}">Back in service</button>`
+            : st === 'charging'
             ? `<button class="primary" data-act="charged" data-id="${u.id}" data-t="chargedbtn">Stop charging</button>`
             : `<button class="primary" data-act="start" data-id="${u.id}" ${st !== 'ready' || battPct(u) <= 0 ? 'disabled' : ''} title="${battPct(u) <= 0 ? 'Charge or swap the battery first' : ''}">Start rental</button>
                <button data-act="charge" data-id="${u.id}" ${st === 'broken' ? 'disabled' : ''}>Charge</button>`}
@@ -411,9 +418,10 @@ function renderLog() {
   const total = rs.reduce((s, r) => s + (r.amount || 0), 0);
   $('#logMeta').textContent = rs.length ? `${rs.length} rental${rs.length > 1 ? 's' : ''} · ${peso(total)}` : '';
   if (!rs.length) { t.innerHTML = '<tr><td class="nolog">No finished rentals yet today.</td></tr>'; return; }
-  t.innerHTML = `<thead><tr><th>Unit</th><th>Customer</th><th>Time</th><th class="r">Played</th><th class="r">Amount</th><th></th></tr></thead><tbody>` +
+  t.innerHTML = `<thead><tr><th>Unit</th><th>Customer</th><th>Time</th><th class="r">Played</th><th class="r">Amount</th><th>Return</th><th></th></tr></thead><tbody>` +
     rs.map(r => `<tr><td>${esc(r.unitName)}</td><td>${esc(r.customer || '—')}</td><td class="num">${clock(r.startAt)}–${clock(r.endAt)}</td>
       <td class="r num">${Math.round(r.minutes)} min</td><td class="r num"><b>${peso(r.amount)}</b></td>
+      <td class="${(r.issues && r.issues.length) || r.note ? 'issue' : 'ok'}">${(r.issues && r.issues.length) || r.note ? '⚠ ' + esc([...(r.issues || []).map(x => 'Not OK: ' + x), r.note].filter(Boolean).join(' · ')) : r.checked ? '✓ OK' : '—'}</td>
       <td class="r"><button class="ghost" data-act="void" data-id="${r.id}" title="Remove this entry">✕</button></td></tr>`).join('') + '</tbody>';
 }
 
@@ -484,16 +492,39 @@ function endDialog(u) {
       ${b.paid ? `<div><span>Paid upfront</span><span class="num">${peso(b.paid)}</span></div>` : ''}
       <div class="tot"><span>${b.paid ? 'Balance to collect' : 'Collect'}</span><span class="num">${peso(b.due)}</span></div>
     </div>
+    ${checks().length ? `<div class="field"><label>Return checklist</label><div class="clist">
+      ${checks().map((c, i) => `<label class="check"><input type="checkbox" data-chk="${i}"> ${esc(c)}</label>`).join('')}
+    </div></div>` : ''}
+    <div class="field" id="issueBox" style="display:none"><label for="issueNote">What's wrong? (optional)</label><input id="issueNote" maxlength="80" placeholder="e.g. broken antenna, scratched body"></div>
+    <label class="check" id="brokeRow" style="display:none"><input type="checkbox" id="broke"> Mark car out of order</label>
     <label class="check"><input type="checkbox" id="tocharge" ${battPct(u, now) <= 40 ? 'checked' : ''}> Put on charge now (battery ~${Math.floor(battLeft(u, now))} of ${battCap(u)} min left)</label>
     <p class="hint">Total for this rental: ${peso(b.amount)}. Includes a ${state.config.graceMin || 0}-minute grace before the next block is charged.</p>
     <div class="row-end"><button data-act="close">Keep running</button><button class="primary" id="go">${b.due > 0 ? 'Collected · end' : 'End rental'}</button></div>`);
+  const boxes = [...$('#sheet').querySelectorAll('[data-chk]')];
+  const goBtn = $('#go'), goLabel = goBtn.textContent;
+  const sync = () => {
+    const missed = boxes.filter(x => !x.checked).length;
+    const any = boxes.some(x => x.checked);
+    $('#issueBox').style.display = any && missed ? '' : 'none';
+    $('#brokeRow').style.display = any && missed ? '' : 'none';
+    goBtn.textContent = missed && any ? goLabel + ' with issues' : goLabel;
+  };
+  boxes.forEach(x => x.onchange = sync);
   $('#go').onclick = async () => {
+    const missed = boxes.filter(x => !x.checked);
+    if (missed.length && !boxes.some(x => x.checked) && !goBtn.dataset.asked) {
+      goBtn.dataset.asked = '1'; goBtn.textContent = 'Skip checklist · end';
+      return toast('Tick the checklist items first, or tap again to skip');
+    }
+    const issues = boxes.some(x => x.checked) ? missed.map(x => checks()[+x.dataset.chk]) : [];
+    const note = ($('#issueNote').value || '').trim();
+    const broke = $('#broke').checked;
     const charge = $('#tocharge').checked;
     closeModal();
     try {
-      await store.addRental({ day: dayKey(now), unitId: u.id, unitName: u.name, rate: b.R, blockMin: b.B, customer: a.customer || '', startAt: a.startAt, endAt: now, minutes: b.min, blocks: b.blocks, amount: b.amount, prepaidMin: a.prepaidMin || 0 });
-      await store.saveUnit(u.id, { ...unitBody(u), active: null, battUsedMin: battUsed(u, now), status: charge ? 'charging' : 'ready', chargeStartAt: charge ? now : null });
-      toast(`${u.name} ended · ${peso(b.amount)}`);
+      await store.addRental({ day: dayKey(now), unitId: u.id, unitName: u.name, rate: b.R, blockMin: b.B, customer: a.customer || '', startAt: a.startAt, endAt: now, minutes: b.min, blocks: b.blocks, amount: b.amount, prepaidMin: a.prepaidMin || 0, issues, note, checked: boxes.some(x => x.checked) });
+      await store.saveUnit(u.id, { ...unitBody(u), active: null, battUsedMin: battUsed(u, now), status: broke ? 'broken' : charge ? 'charging' : 'ready', chargeStartAt: !broke && charge ? now : null, issue: broke ? (note || issues.join(', ')) : '' });
+      toast(issues.length ? `${u.name} ended · ${issues.length} issue${issues.length > 1 ? 's' : ''} noted` : `${u.name} ended · ${peso(b.amount)}`);
     } catch (e) {}
   };
 }
@@ -514,6 +545,9 @@ function settingsDialog() {
         <input id="nBlock" type="number" min="1" max="240" inputmode="numeric" value="15" title="Minutes per price">
         <button class="primary" id="add">Add</button></div></div>
     <hr>
+    <div class="field"><label for="clistEdit">Return checklist (one item per line)</label>
+      <textarea id="clistEdit" rows="3" style="font:inherit;padding:.55em .7em;border:1px solid var(--line);border-radius:10px;resize:vertical">${esc(checks().join('\n'))}</textarea></div>
+    <p class="hint">Shown when ending a rental. Leave empty to turn the checklist off.</p>
     <div class="field"><label for="grace">Grace minutes</label><input id="grace" type="number" min="0" max="10" value="${state.config.graceMin ?? 2}" style="max-width:110px"></div>
     <p class="hint">How long a customer can run over before the next block is charged.</p>
     <div class="row-end"><button class="primary" data-act="close">Done</button></div>`, true);
@@ -536,6 +570,10 @@ function settingsDialog() {
     const id = newId('u');
     await store.saveUnit(id, { name, rate, blockMin, status: 'ready', order: Date.now(), active: null, batteryMin: 20, chargeMin: 60, battUsedMin: 0 }).catch(() => {});
     settingsDialog(); toast(`${name} added`);
+  };
+  $('#clistEdit').onchange = e => {
+    const list = e.target.value.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 8);
+    store.saveConfig({ ...state.config, checklist: list }).then(() => toast('Checklist saved'), () => {});
   };
   $('#grace').onchange = e => { const g = Math.max(0, Math.min(10, Number(e.target.value) || 0)); store.saveConfig({ ...state.config, graceMin: g }).then(() => toast('Saved'), () => {}); };
 }
@@ -582,8 +620,8 @@ function exportCsv(scope) {
   if (!rows.length) return toast('No rentals to export yet.');
   const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const t = ts => new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: false }).format(ts);
-  const lines = ['Date,Unit,Customer,Start,End,Minutes,Blocks,Rate,Amount'].concat(rows.map(r =>
-    [r.day, q(r.unitName), q(r.customer), t(r.startAt), t(r.endAt), Math.round(r.minutes), r.blocks, r.rate, r.amount].join(',')));
+  const lines = ['Date,Unit,Customer,Start,End,Minutes,Blocks,Rate,Amount,Return issues'].concat(rows.map(r =>
+    [r.day, q(r.unitName), q(r.customer), t(r.startAt), t(r.endAt), Math.round(r.minutes), r.blocks, r.rate, r.amount, q([...(r.issues || []).map(x => 'Not OK: ' + x), r.note].filter(Boolean).join('; '))].join(',')));
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -608,6 +646,7 @@ document.addEventListener('click', e => {
     return store.saveUnit(u.id, { ...unitBody(u), battUsedMin: battUsed(u, now), status: 'ready', chargeStartAt: null }).catch(() => {});
   }
   if (act === 'dead' && u) return deadDialog(u);
+  if (act === 'fixed' && u) return store.saveUnit(u.id, { ...unitBody(u), status: 'ready', issue: '' }).then(() => toast(`${u.name} is back in service`), () => {});
   if (act === 'swap' && u) {
     const body = { ...unitBody(u), battUsedMin: 0 };
     if (u.active) body.active = { ...u.active, battOffsetMin: elapsedMs(u.active) / 60000 };
